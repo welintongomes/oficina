@@ -354,6 +354,14 @@
         <label>Título<span class="req"></span>
           <input type="text" id="fieldTitle" placeholder="Ex.: Troca da correia dentada" maxlength="120">
         </label>
+
+        <label>O que você quer lembrar
+          <div class="textarea-wrap">
+            <textarea id="fieldContent" rows="5" placeholder="Explique com suas palavras: qual era o problema, o que resolveu, o passo a passo, onde fica a peça..."></textarea>
+            <button type="button" id="btnMicContent" class="icon-btn mic-btn" aria-label="Ditar em voz alta" title="Ditar em voz alta">🎤</button>
+          </div>
+        </label>
+        
         <label>Foto (opcional)
           <input type="file" accept="image/*" capture="environment" id="fieldPhoto">
         </label>
@@ -372,13 +380,6 @@
 
         <label>Valor ou especificação (opcional)
           <input type="text" id="fieldSpec" placeholder="Ex.: 35 Nm / vela 0,8 mm / fusível 15A">
-        </label>
-
-        <label>O que você quer lembrar
-          <div class="textarea-wrap">
-            <textarea id="fieldContent" rows="5" placeholder="Explique com suas palavras: qual era o problema, o que resolveu, o passo a passo, onde fica a peça..."></textarea>
-            <button type="button" id="btnMicContent" class="icon-btn mic-btn" aria-label="Ditar em voz alta" title="Ditar em voz alta">🎤</button>
-          </div>
         </label>
 
         <label>Palavras-chave para achar depois (separe por vírgula)
@@ -773,23 +774,43 @@ function renderCategoryList(){
   });
 }
 
-function scoreMatch(item, q){
+function scoreMatch(item, q) {
   let score = 0;
+  
   const nTitle = normalize(item.title);
   const nVehicle = normalize(item.vehicle);
   const nSpec = normalize(item.spec);
   const nContent = normalize(item.content);
   const nTags = normalize((item.tags||[]).join(' '));
   const nCategory = normalize(item.category);
-  if (nTitle.includes(q)) score += 5;
-  if (nTags.includes(q)) score += 4;
-  if (nVehicle.includes(q)) score += 3;
-  if (nSpec.includes(q)) score += 3;
-  if (nCategory.includes(q)) score += 2;
-  if (nContent.includes(q)) score += 1;
+
+  // Junta todos os textos do item num lugar só para facilitar a checagem
+  const allText = `${nTitle} ${nVehicle} ${nSpec} ${nContent} ${nTags} ${nCategory}`;
+
+  // Quebra o que você pesquisou em palavras separadas (ex: "moto", "honda", "rolamento")
+  const words = q.split(' ').filter(w => w.trim() !== '');
+
+  // Regra de Ouro (Filtro AND): Todas as palavras pesquisadas TÊM que existir no item.
+  // Se faltar uma palavra, ele não mostra (retorna 0), o que garante que a busca não traga lixo.
+  for (const word of words) {
+    if (!allText.includes(word)) {
+      return 0; // Desclassifica o registro imediatamente
+    }
+  }
+
+  // Se passou pelo filtro acima, significa que o registro tem todas as palavras!
+  // Agora vamos calcular os pontos para ver quem aparece primeiro na lista:
+  for (const word of words) {
+    if (nTitle.includes(word)) score += 5;     // Peso maior se a palavra estiver no título
+    if (nTags.includes(word)) score += 4;      // Peso forte para as tags
+    if (nVehicle.includes(word)) score += 3;   // Peso médio para veículo
+    if (nSpec.includes(word)) score += 3;      // Peso médio para especificação
+    if (nCategory.includes(word)) score += 2;  // Peso menor para categoria
+    if (nContent.includes(word)) score += 1;   // Peso básico para o conteúdo geral
+  }
+
   return score;
 }
-
 function getFilteredSorted(){
   let items = allItems.slice();
   if (currentCategory === 'Favoritos'){
@@ -967,21 +988,29 @@ function closeForm(){
   if (photoPreviewURL){ URL.revokeObjectURL(photoPreviewURL); photoPreviewURL = null; }
 }
 function handleSave(){
-  // 1. Título e Foto Rápida (modificado para let para aceitar o título automático)
   let title = fieldTitle.value.trim();
-  
-  if (!title && !currentPhotoBlob) { 
-    showToast('Dê um título ou adicione uma foto.'); 
-    fieldTitle.focus(); 
+  const content = fieldContent.value.trim(); // Puxa o conteúdo logo no início
+
+  // 1. Validação: Precisa de pelo menos UMA das três coisas (Título, Foto ou Anotação)
+  if (!title && !currentPhotoBlob && !content) { 
+    showToast('Dê um título, foto ou digite uma anotação.'); 
+    fieldContent.focus(); 
     return; 
   }
   
-  if (!title && currentPhotoBlob) {
-    const dataLocal = new Date().toLocaleString('pt-BR').substring(0, 10);
-    title = `Foto rápida - ${dataLocal}`; 
+  // 2. Títulos Automáticos
+  if (!title) {
+    if (content) {
+      // Se tem texto, usa as primeiras 30 letras como título
+      title = content.length > 30 ? content.substring(0, 30) + '...' : content;
+    } else if (currentPhotoBlob) {
+      // Se só tem foto, usa a data
+      const dataLocal = new Date().toLocaleString('pt-BR').substring(0, 10);
+      title = `Foto rápida - ${dataLocal}`; 
+    }
   }
 
-  // 2. Categoria (Esta é a variável que o console reclamou que estava faltando)
+  // 3. Categoria
   let category = fieldCategory.value;
   if (category === '__custom__'){
     category = fieldCategoryCustom.value.trim();
@@ -992,7 +1021,7 @@ function handleSave(){
     }
   }
 
-  // 3. Restante dos campos do formulário
+  // 4. Monta os dados
   const tags = fieldTags.value.split(',').map(t => t.trim()).filter(Boolean);
   const now = Date.now();
   
@@ -1001,14 +1030,14 @@ function handleSave(){
     category: category,
     vehicle: fieldVehicle.value.trim(),
     spec: fieldSpec.value.trim(),
-    content: fieldContent.value.trim(),
+    content: content, // Salva o conteúdo aqui
     tags: tags,
     favorite: fieldFavorite.checked,
     photo: currentPhotoBlob || null,
     updatedAt: now
   };
 
-  // 4. Salvar no banco (IndexedDB)
+  // 5. Salva no banco (IndexedDB)
   const savePromise = (async () => {
     if (editingId){
       const existing = allItems.find(i => i.id === editingId);
@@ -1025,7 +1054,7 @@ function handleSave(){
 
   savePromise.then(() => {
     closeForm();
-    showToast('Salvo!');
+    showToast('Salvo com sucesso!');
     loadAndRender();
   });
 }
