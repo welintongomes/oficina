@@ -5,6 +5,7 @@
 <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
 <meta name="theme-color" content="#21242A">
 <title>Memória da Oficina</title>
+<link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>👨🏻‍🔧</text></svg>">
 <style>
   :root{
     --bg:#21242A;
@@ -940,34 +941,49 @@ function closeForm(){
   currentPhotoBlob = null;
   if (photoPreviewURL){ URL.revokeObjectURL(photoPreviewURL); photoPreviewURL = null; }
 }
-
 function handleSave(){
+  // 1. Título e Foto Rápida (modificado para let para aceitar o título automático)
   let title = fieldTitle.value.trim();
-if (!title && !currentPhotoBlob) { 
-  showToast('Dê um título ou adicione uma foto.'); 
-  fieldTitle.focus(); 
-  return; 
-}
-if (!title && currentPhotoBlob) {
-  // Gera título automático se tiver foto mas não tiver título
-  const dataLocal = new Date().toLocaleString('pt-BR').substring(0, 10);
-  title = `Foto rápida - ${dataLocal}`; 
-}
+  
+  if (!title && !currentPhotoBlob) { 
+    showToast('Dê um título ou adicione uma foto.'); 
+    fieldTitle.focus(); 
+    return; 
+  }
+  
+  if (!title && currentPhotoBlob) {
+    const dataLocal = new Date().toLocaleString('pt-BR').substring(0, 10);
+    title = `Foto rápida - ${dataLocal}`; 
+  }
 
+  // 2. Categoria (Esta é a variável que o console reclamou que estava faltando)
+  let category = fieldCategory.value;
+  if (category === '__custom__'){
+    category = fieldCategoryCustom.value.trim();
+    if (!category){ 
+      showToast('Digite o nome da nova categoria.'); 
+      fieldCategoryCustom.focus(); 
+      return; 
+    }
+  }
+
+  // 3. Restante dos campos do formulário
   const tags = fieldTags.value.split(',').map(t => t.trim()).filter(Boolean);
   const now = Date.now();
+  
   const item = {
-    title,
-    category,
+    title: title,
+    category: category,
     vehicle: fieldVehicle.value.trim(),
     spec: fieldSpec.value.trim(),
     content: fieldContent.value.trim(),
-    tags,
+    tags: tags,
     favorite: fieldFavorite.checked,
     photo: currentPhotoBlob || null,
     updatedAt: now
   };
 
+  // 4. Salvar no banco (IndexedDB)
   const savePromise = (async () => {
     if (editingId){
       const existing = allItems.find(i => i.id === editingId);
@@ -988,7 +1004,6 @@ if (!title && currentPhotoBlob) {
     loadAndRender();
   });
 }
-
 /* ---------------- Visualizar detalhes ---------------- */
 function openView(item){
   viewingItem = item;
