@@ -195,11 +195,38 @@
   textarea{resize:vertical;min-height:90px;}
   input[type=text]:focus,select:focus,textarea:focus{outline:2px solid var(--accent);outline-offset:0;}
   .textarea-wrap{position:relative;}
-  .textarea-wrap textarea{padding-right:50px;}
-  .textarea-wrap .mic-btn{position:absolute;right:6px;bottom:6px;width:38px;height:38px;min-width:38px;}
-  input[type=file]{
-    background:var(--panel-2);border:1px solid var(--steel);border-radius:8px;
-    padding:10px;color:var(--smoke);width:100%;
+  .textarea-wrap textarea{padding-left:50px;}
+  .textarea-wrap .mic-btn{position:absolute;left:6px;bottom:6px;width:38px;height:38px;min-width:38px;}
+  /* Área do input de arquivo (fundo) */
+  input[type=file] {
+    background: var(--panel-2);
+    border: 1px dashed var(--smoke); /* Borda tracejada dá um ar de app moderno */
+    border-radius: 8px;
+    padding: 8px;
+    color: var(--smoke);
+    width: 100%;
+    cursor: pointer;
+    font-size: 14px;
+  }
+
+  /* A mágica que transforma o botão "1999" em um botão moderno */
+  input[type=file]::file-selector-button {
+    background: var(--steel);
+    border: none;
+    color: var(--chalk);
+    padding: 8px 16px;
+    border-radius: 6px;
+    font-weight: 600;
+    margin-right: 12px;
+    cursor: pointer;
+    font-family: inherit;
+    font-size: 14px;
+    transition: background 0.2s ease;
+  }
+
+  /* Efeito ao clicar no botão */
+  input[type=file]::file-selector-button:active {
+    background: var(--panel);
   }
   .checkbox-row{flex-direction:row;align-items:center;gap:10px;font-size:15px;color:var(--chalk);}
   .checkbox-row input{width:20px;height:20px;}
@@ -324,10 +351,16 @@
     </div>
     <form id="itemForm">
       <div class="modal-body">
-        <label>Título<span class="req">*</span>
+        <label>Título<span class="req"></span>
           <input type="text" id="fieldTitle" placeholder="Ex.: Troca da correia dentada" maxlength="120">
         </label>
-
+        <label>Foto (opcional)
+          <input type="file" accept="image/*" capture="environment" id="fieldPhoto">
+        </label>
+        <div id="photoPreviewWrap">
+          <img id="photoPreview" alt="Prévia da foto">
+          <button type="button" id="btnRemovePhoto" class="btn-secondary">Remover foto</button>
+        </div>
         <label>Categoria
           <select id="fieldCategory"></select>
         </label>
@@ -351,14 +384,6 @@
         <label>Palavras-chave para achar depois (separe por vírgula)
           <input type="text" id="fieldTags" placeholder="Ex.: motor, ignição, sensor">
         </label>
-
-        <label>Foto (opcional)
-          <input type="file" accept="image/*" capture="environment" id="fieldPhoto">
-        </label>
-        <div id="photoPreviewWrap">
-          <img id="photoPreview" alt="Prévia da foto">
-          <button type="button" id="btnRemovePhoto" class="btn-secondary">Remover foto</button>
-        </div>
 
         <label class="checkbox-row"><input type="checkbox" id="fieldFavorite"> Guardar como favorito ⭐ (aparece sempre no topo)</label>
       </div>
