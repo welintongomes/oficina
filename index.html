@@ -5,7 +5,7 @@
 <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
 <meta name="theme-color" content="#21242A">
 <title>Memória da Oficina</title>
-<link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>👨🏻‍🔧</text></svg>">
+<link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>📑</text></svg>">
 <style>
   :root{
     --bg:#21242A;
@@ -172,7 +172,7 @@
   .modal-overlay.open .modal-box{transform:translateY(0);}
   @media(min-width:640px){
     .modal-overlay{align-items:center;padding:14px;}
-    .modal-box{border-radius:14px;transform:translateY(24px);}
+    .modal-box{border-radius:14px;transform:translateY(24px); scrollbar-color: rgb(139 139 139) rgba(255, 255, 255, .05); scrollbar-width: thin;}
   }
   .modal-header{
     display:flex;align-items:center;justify-content:space-between;
@@ -243,7 +243,7 @@
   .view-footer{flex-wrap:wrap;}
 
   .spec-big{color:var(--info);font-weight:700;font-size:22px;margin:0;}
-  .content-block{white-space:pre-wrap;word-wrap:break-word;line-height:1.6;margin:0;}
+  .content-block{ overflow-y: auto; max-height: 38vh;scrollbar-width: thin; scrollbar-color: rgb(139 139 139) rgba(255, 255, 255, .05); white-space:pre-wrap;word-wrap:break-word;line-height:1.6;margin:0;}
   .meta-line{margin:0;color:var(--smoke);font-size:14px;}
   .view-meta-footer{color:var(--smoke);font-size:13px;margin-top:6px;}
   .view-photo{width:100%;border-radius:8px;border:1px solid var(--steel);margin:4px 0;}
@@ -275,12 +275,22 @@
     .mic-btn.listening{animation:none;}
     #toast{transition:none;}
   }
+  @media(max-width:640px){
+    .modal-box{border-radius:16px;margin-bottom: 75px;}
+  }
+  mark {
+    background: var(--accent);
+    color: var(--accent-ink);
+    border-radius: 3px;
+    padding: 0 3px;
+    font-weight: 700;
+  }
 </style>
 </head>
 <body>
 <div id="app">
   <header id="topbar">
-    <h1>🔧 Memória da Oficina</h1>
+    <h1>📝 Minhas Anotações</h1>
     <p class="tagline">Anote uma vez. Ache na hora.</p>
   </header>
 
@@ -319,7 +329,7 @@
       <div class="search-row">
         <div class="search-wrap">
           <span class="search-ic">🔍</span>
-          <input type="text" id="searchInput" placeholder="Peça, torque, veículo, sintoma..." autocomplete="off">
+          <input type="text" id="searchInput" placeholder="Título, assunto, tag, conteúdo..." autocomplete="off">
           <button id="btnClearSearch" aria-label="Limpar busca">✕</button>
         </div>
         <button id="btnMic" class="icon-btn mic-btn" aria-label="Buscar falando" title="Buscar falando">🎤</button>
@@ -352,7 +362,7 @@
     <form id="itemForm">
       <div class="modal-body">
         <label>Título<span class="req"></span>
-          <input type="text" id="fieldTitle" placeholder="Ex.: Troca da correia dentada" maxlength="120">
+          <input type="text" id="fieldTitle" placeholder="Ex.: Ideia de projeto, Wi-Fi, Medida da sala" maxlength="120">
         </label>
 
         <label>O que você quer lembrar
@@ -373,17 +383,23 @@
           <select id="fieldCategory"></select>
         </label>
         <input type="text" id="fieldCategoryCustom" placeholder="Nome da nova categoria" style="display:none">
-
-        <label>Veículo ou modelo (opcional)
-          <input type="text" id="fieldVehicle" placeholder="Ex.: Gol G5 1.6 2012">
+        <label>Áudio (opcional)
+          <input type="file" accept="audio/*" capture="microphone" id="fieldAudio">
         </label>
-
-        <label>Valor ou especificação (opcional)
-          <input type="text" id="fieldSpec" placeholder="Ex.: 35 Nm / vela 0,8 mm / fusível 15A">
-        </label>
-
+        <div id="audioPreviewWrap" style="display:none; flex-direction:column; gap:8px; margin-bottom:12px;">
+          <audio id="audioPreview" controls style="width:100%;"></audio>
+          <button type="button" id="btnRemoveAudio" class="btn-secondary">Remover áudio</button>
+        </div>
         <label>Palavras-chave para achar depois (separe por vírgula)
           <input type="text" id="fieldTags" placeholder="Ex.: motor, ignição, sensor">
+        </label>
+        
+        <label>📌 Subtítulo ou Referência (opcional)
+          <input type="text" id="fieldVehicle" placeholder="Ex.: Cliente X, Projeto Site, Banco">
+        </label>
+
+        <label>Valor, Quantidade ou Especificação (opcional)
+          <input type="text" id="fieldSpec" placeholder="Ex.: R$ 150,00 / 220V / 5 litros">
         </label>
 
         <label class="checkbox-row"><input type="checkbox" id="fieldFavorite"> Guardar como favorito ⭐ (aparece sempre no topo)</label>
@@ -451,7 +467,7 @@ if (!window.indexedDB) {
 }
 
 /* ---------------- IndexedDB ---------------- */
-const DB_NAME = 'oficinaMemoriaDB';
+const DB_NAME = 'minhasMemoriasDB';
 const DB_VERSION = 1;
 const STORE = 'items';
 
@@ -505,15 +521,52 @@ function dbGetAll(){
     req.onerror = () => reject(req.error);
   }));
 }
+// Puxa apenas UM registro completo do banco (com a foto pesada)
+function dbGet(id){
+  return dbPromise.then(db => new Promise((resolve,reject) => {
+    const tx = db.transaction(STORE,'readonly');
+    const req = tx.objectStore(STORE).get(id);
+    req.onsuccess = () => resolve(req.result);
+    req.onerror = () => reject(req.error);
+  }));
+}
 
+// Puxa toda a lista, mas ESVAZIA as fotos para poupar a memória RAM
+function dbGetAllLight(){
+  return dbPromise.then(db => new Promise((resolve,reject) => {
+    const tx = db.transaction(STORE,'readonly');
+    const store = tx.objectStore(STORE);
+    const req = store.openCursor();
+    const results = [];
+    req.onsuccess = (e) => {
+      const cursor = e.target.result;
+      if(cursor) {
+        const item = cursor.value;
+        if (item.photo) {
+          item.hasPhoto = true; // Avisa que tem foto
+          delete item.photo;    // Apaga o arquivo gigante da memória
+        }
+        if (item.audio) {
+          item.hasAudio = true;
+          delete item.audio;
+        }
+        results.push(item);
+        cursor.continue();
+      } else {
+        resolve(results);
+      }
+    };
+    req.onerror = () => reject(req.error);
+  }));
+}
 /* ---------------- Estado ---------------- */
-const PRESET_CATEGORIES = ['Diagnóstico','Torque/Aperto','Componente','Procedimento','Peça/Código','Nota geral'];
+const PRESET_CATEGORIES = ['Ideias', 'Senhas/Acessos', 'Referências', 'Procedimento', 'Lembrete', 'Nota geral'];
 const CATEGORY_COLORS = {
-  'Diagnóstico':'#D64545',
-  'Torque/Aperto':'#4FA8D8',
-  'Componente':'#D6A035',
+  'Ideias':'#D6A035',
+  'Senhas/Acessos':'#D64545',
+  'Referências':'#8B6FD1',
   'Procedimento':'#4FA65B',
-  'Peça/Código':'#8B6FD1',
+  'Lembrete':'#4FA8D8',
   'Nota geral':'#9AA0AB'
 };
 
@@ -526,6 +579,11 @@ let currentPhotoBlob = null;
 let photoPreviewURL = null;
 let viewPhotoURL = null;
 let viewingItem = null;
+let currentRenderLimit = 20; // O número mágico: desenha 20 itens por vez
+let lastRenderState = ''; // Ajuda o sistema a saber quando você fez uma nova busca
+let currentAudioBlob = null;
+let formAudioURL = null; // Para tocar o áudio antes de salvar
+let viewAudioURL = null; // Para tocar o áudio na visualização
 
 /* ---------------- Elementos ---------------- */
 const searchInput = document.getElementById('searchInput');
@@ -536,6 +594,10 @@ const resultCount = document.getElementById('resultCount');
 const cardsContainer = document.getElementById('cardsContainer');
 const emptyState = document.getElementById('emptyState');
 const btnAdd = document.getElementById('btnAdd');
+const fieldAudio = document.getElementById('fieldAudio');
+const audioPreviewWrap = document.getElementById('audioPreviewWrap');
+const audioPreview = document.getElementById('audioPreview');
+// btnRemoveAudio já deve estar aí, mas se não tiver: const btnRemoveAudio = document.getElementById('btnRemoveAudio');
 
 const navSearch = document.getElementById('navSearch');
 const navCategory = document.getElementById('navCategory');
@@ -679,6 +741,42 @@ function compressImage(file, maxWidth = 1200, quality = 0.8) {
     reader.onerror = error => reject(error);
   });
 }
+// Previne que códigos estranhos quebrem o design (Segurança)
+function escapeHTML(str) {
+  return (str || '').toString().replace(/[&<>'"]/g, tag => ({
+    '&': '&amp;', '<': '&lt;', '>': '&gt;', "'": '&#39;', '"': '&quot;'
+  }[tag])).replace(/\r?\n/g, '<br>'); // <--- Essa é a mágica do pulo de linha!
+}
+
+// Faz o marcador entender que "oleo" e "óleo" são a mesma coisa
+function createFuzzyRegex(word) {
+  return word
+    .replace(/[aáàãâä]/gi, '[aáàãâä]')
+    .replace(/[eéèêë]/gi, '[eéèêë]')
+    .replace(/[iíìîï]/gi, '[iíìîï]')
+    .replace(/[oóòõôö]/gi, '[oóòõôö]')
+    .replace(/[uúùûü]/gi, '[uúùûü]')
+    .replace(/[cç]/gi, '[cç]');
+}
+
+// Procura as palavras da pesquisa e envolve na tag <mark>
+function highlightHTML(text, query) {
+  if (!text) return '';
+  let safeText = escapeHTML(text);
+  const q = (query || '').trim();
+  if (!q) return safeText;
+
+  const words = q.split(' ').filter(Boolean)
+    .map(w => w.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')) // Escapa símbolos estranhos
+    .map(w => createFuzzyRegex(w)) // Aceita falta de acentos
+    .sort((a, b) => b.length - a.length); // Pinta as palavras maiores primeiro
+
+  if (words.length > 0) {
+    const regex = new RegExp(`(${words.join('|')})`, 'gi');
+    safeText = safeText.replace(regex, '<mark>$1</mark>');
+  }
+  return safeText;
+}
 /* ---------------- Reconhecimento de voz ---------------- */
 const SpeechRecognitionAPI = window.SpeechRecognition || window.webkitSpeechRecognition;
 
@@ -708,7 +806,7 @@ function startVoiceInput(targetEl, button, appendMode){
 
 /* ---------------- Carregar e renderizar ---------------- */
 function loadAndRender(){
-  return dbGetAll().then(items => {
+  return dbGetAllLight().then(items => {
     allItems = items;
     renderCategoryList();
     renderCards();
@@ -862,7 +960,7 @@ function buildCard(item){
   badge.textContent = item.category; badge.style.color = categoryColor(item.category);
   top.appendChild(badge);
 
-  if (item.photo){
+  if (item.photo || item.hasPhoto){
     const flag = document.createElement('span'); flag.className = 'photo-flag'; flag.textContent = '📷';
     top.appendChild(flag);
   }
@@ -876,25 +974,34 @@ function buildCard(item){
   top.appendChild(star);
   card.appendChild(top);
 
-  const title = document.createElement('h3'); title.className = 'card-title'; title.textContent = item.title;
+  // --- MÁGICA DO HIGHLIGHT AQUI ---
+  // Se tem pesquisa, pinta o texto. Se não tem, só exibe normal.
+  const renderText = (text) => currentSearch ? highlightHTML(text, currentSearch) : escapeHTML(text);
+
+  const title = document.createElement('h3'); title.className = 'card-title'; 
+  title.innerHTML = renderText(item.title);
   card.appendChild(title);
 
   if (item.vehicle){
-    const v = document.createElement('p'); v.className = 'card-vehicle'; v.textContent = item.vehicle;
+    const v = document.createElement('p'); v.className = 'card-vehicle'; 
+    v.innerHTML = renderText(item.vehicle);
     card.appendChild(v);
   }
   if (item.spec){
-    const s = document.createElement('p'); s.className = 'card-spec'; s.textContent = item.spec;
+    const s = document.createElement('p'); s.className = 'card-spec'; 
+    s.innerHTML = renderText(item.spec);
     card.appendChild(s);
   }
   if (item.content){
-    const c = document.createElement('p'); c.className = 'card-snippet'; c.textContent = item.content;
+    const c = document.createElement('p'); c.className = 'card-snippet'; 
+    c.innerHTML = renderText(item.content);
     card.appendChild(c);
   }
   if (item.tags && item.tags.length){
     const tw = document.createElement('div'); tw.className = 'tags-wrap';
     item.tags.slice(0,6).forEach(t => {
-      const pill = document.createElement('span'); pill.className = 'tag-pill'; pill.textContent = '#' + t;
+      const pill = document.createElement('span'); pill.className = 'tag-pill'; 
+      pill.innerHTML = '#' + renderText(t);
       tw.appendChild(pill);
     });
     card.appendChild(tw);
@@ -903,13 +1010,23 @@ function buildCard(item){
   card.appendChild(footer);
   return card;
 }
-
 function renderCards(){
   updateNavIndicators();
+  
+  // 1. O CÉREBRO DO LIMITE: Verifica se você digitou uma busca nova, mudou a aba ou a ordenação.
+  // Se mudou, ele reseta o limite de volta para 20.
+  const currentState = `${currentCategory}|${currentSearch}|${currentSort}`;
+  if (lastRenderState !== currentState) {
+    currentRenderLimit = 20;
+    lastRenderState = currentState;
+  }
+
+  // Busca os dados filtrados na memória RAM (processo instantâneo)
   const items = getFilteredSorted();
   resultCount.textContent = items.length === 1 ? '1 registro' : `${items.length} registros`;
   searchResultCount.textContent = items.length;
   cardsContainer.innerHTML = '';
+  
   if (items.length === 0){
     emptyState.style.display = 'block';
     emptyState.textContent = allItems.length === 0
@@ -918,13 +1035,48 @@ function renderCards(){
     return;
   }
   emptyState.style.display = 'none';
-  items.forEach(item => cardsContainer.appendChild(buildCard(item)));
-}
 
-function toggleFavorite(item){
-  item.favorite = !item.favorite;
-  item.updatedAt = Date.now();
-  dbPut(item).then(() => { renderCategoryList(); renderCards(); });
+  // 2. A PROTEÇÃO: Corta a lista gigante e pega só a quantidade permitida (ex: os 20 primeiros)
+  const itemsToRender = items.slice(0, currentRenderLimit);
+  
+  // Desenha no HTML apenas o que foi cortado, poupando a placa de vídeo do celular
+  itemsToRender.forEach(item => cardsContainer.appendChild(buildCard(item)));
+
+  // 3. O BOTÃO "MOSTRAR MAIS": Se a lista original for maior que o limite, cria o botão no final
+  if (items.length > currentRenderLimit) {
+    const btnMoreContainer = document.createElement('div');
+    // Faz o botão ocupar a largura toda caso você abra no computador
+    btnMoreContainer.style.gridColumn = '1 / -1'; 
+    
+    const btnMore = document.createElement('button');
+    btnMore.className = 'btn-secondary';
+    btnMore.style.width = '100%';
+    btnMore.style.padding = '14px';
+    btnMore.style.marginTop = '10px';
+    btnMore.textContent = `Mostrar mais (restam ${items.length - currentRenderLimit})`;
+    
+    // Quando clicar, aumenta a cota em 20 e desenha de novo
+    btnMore.addEventListener('click', () => {
+      currentRenderLimit += 20; 
+      renderCards(); 
+    });
+    
+    btnMoreContainer.appendChild(btnMore);
+    cardsContainer.appendChild(btnMoreContainer);
+  }
+}
+async function toggleFavorite(itemLight){
+  itemLight.favorite = !itemLight.favorite;
+  //itemLight.updatedAt = Date.now();
+  
+  // CRÍTICO: Puxa o original com a foto antes de salvar, para não perdê-la!
+  const fullItem = await dbGet(itemLight.id);
+  fullItem.favorite = itemLight.favorite;
+  //fullItem.updatedAt = itemLight.updatedAt;
+  
+  await dbPut(fullItem);
+  renderCategoryList(); 
+  renderCards();
 }
 
 /* ---------------- Formulário (adicionar/editar/duplicar) ---------------- */
@@ -961,6 +1113,31 @@ function updatePhotoPreview(){
     photoPreview.removeAttribute('src');
   }
 }
+function updateAudioPreview(){
+  if (formAudioURL){ URL.revokeObjectURL(formAudioURL); formAudioURL = null; }
+  if (currentAudioBlob){
+    formAudioURL = URL.createObjectURL(currentAudioBlob);
+    audioPreview.src = formAudioURL;
+    audioPreviewWrap.style.display = 'flex';
+  } else {
+    audioPreviewWrap.style.display = 'none';
+    audioPreview.removeAttribute('src');
+  }
+}
+function closeForm(){
+  closeSheetEl(modalForm);
+  editingId = null;
+  
+  // Limpa foto
+  currentPhotoBlob = null;
+  fieldPhoto.value = '';
+  updatePhotoPreview();
+  
+  // Limpa áudio
+  currentAudioBlob = null;
+  fieldAudio.value = '';
+  updateAudioPreview();
+}
 
 function openForm(item, mode){
   formTitle.textContent = mode === 'edit' ? 'Editar registro' : 'Novo registro';
@@ -973,19 +1150,17 @@ function openForm(item, mode){
   fieldContent.value = item ? (item.content || '') : '';
   fieldTags.value = item ? (item.tags||[]).join(', ') : '';
   fieldFavorite.checked = item ? !!item.favorite : false;
+  
   currentPhotoBlob = item && item.photo ? item.photo : null;
   fieldPhoto.value = '';
   updatePhotoPreview();
 
+  currentAudioBlob = item && item.audio ? item.audio : null;
+  fieldAudio.value = '';
+  updateAudioPreview();
+
   openSheet(modalForm);
   setTimeout(() => fieldTitle.focus(), 260);
-}
-
-function closeForm(){
-  closeSheetEl(modalForm);
-  editingId = null;
-  currentPhotoBlob = null;
-  if (photoPreviewURL){ URL.revokeObjectURL(photoPreviewURL); photoPreviewURL = null; }
 }
 function handleSave(){
   let title = fieldTitle.value.trim();
@@ -1034,6 +1209,7 @@ function handleSave(){
     tags: tags,
     favorite: fieldFavorite.checked,
     photo: currentPhotoBlob || null,
+    audio: currentAudioBlob || null,
     updatedAt: now
   };
 
@@ -1059,49 +1235,184 @@ function handleSave(){
   });
 }
 /* ---------------- Visualizar detalhes ---------------- */
-function openView(item){
+async function openView(itemLight){
+  const item = await dbGet(itemLight.id); // Puxa tudo pesado do banco
+  
   viewingItem = item;
   viewTitle.textContent = item.title;
   viewBody.innerHTML = '';
   if (viewPhotoURL){ URL.revokeObjectURL(viewPhotoURL); viewPhotoURL = null; }
+  if (viewAudioURL){ URL.revokeObjectURL(viewAudioURL); viewAudioURL = null; }
 
   const badge = document.createElement('span'); badge.className = 'badge';
   badge.textContent = item.category; badge.style.color = categoryColor(item.category);
   viewBody.appendChild(badge);
 
+  const renderText = (text) => currentSearch ? highlightHTML(text, currentSearch) : escapeHTML(text);
+
   if (item.vehicle){
-    const p = document.createElement('p'); p.className = 'meta-line'; p.textContent = '🚗 ' + item.vehicle;
+    const p = document.createElement('p'); p.className = 'meta-line'; 
+    p.innerHTML = '📌 ' + renderText(item.vehicle);
     viewBody.appendChild(p);
   }
   if (item.spec){
-    const p = document.createElement('p'); p.className = 'spec-big'; p.textContent = item.spec;
+    const p = document.createElement('p'); p.className = 'spec-big'; 
+    p.innerHTML = renderText(item.spec);
     viewBody.appendChild(p);
   }
   if (item.photo){
     const img = document.createElement('img'); img.className = 'view-photo';
     viewPhotoURL = URL.createObjectURL(item.photo);
     img.src = viewPhotoURL;
-    img.alt = 'Foto anexada';
     viewBody.appendChild(img);
   }
+  if (item.audio){
+    const aud = document.createElement('audio'); aud.controls = true;
+    aud.style.width = '100%'; aud.style.marginTop = '8px';
+    viewAudioURL = URL.createObjectURL(item.audio);
+    aud.src = viewAudioURL;
+    viewBody.appendChild(aud);
+  }
+
   if (item.content){
-    const c = document.createElement('p'); c.className = 'content-block'; c.textContent = item.content;
-    viewBody.appendChild(c);
-  }
-  if (item.tags && item.tags.length){
-    const tw = document.createElement('div'); tw.className = 'tags-wrap';
-    item.tags.forEach(t => {
-      const pill = document.createElement('span'); pill.className = 'tag-pill'; pill.textContent = '#' + t;
-      tw.appendChild(pill);
+    const contentWrap = document.createElement('div');
+    contentWrap.style.marginTop = '12px';
+
+    const toolbar = document.createElement('div');
+    toolbar.style.display = 'flex'; toolbar.style.gap = '8px';
+    toolbar.style.marginBottom = '6px'; toolbar.style.justifyContent = 'flex-end';
+
+    // Se tiver '[]', libera o botão de Orçamento Mágico!
+    const hasChecklist = item.content.includes('[');
+    if (hasChecklist) {
+      const btnBudget = document.createElement('button');
+      btnBudget.className = 'tag-pill'; btnBudget.style.border = 'none';
+      btnBudget.style.background = '#4FA65B'; btnBudget.style.color = '#fff';
+      btnBudget.style.fontWeight = 'bold'; btnBudget.innerHTML = '💸 Orçamento Whats';
+      toolbar.appendChild(btnBudget);
+
+      // LÓGICA DO ORÇAMENTO
+      btnBudget.addEventListener('click', async () => {
+        let total = 0; let desc = [];
+        const lines = item.content.split('\n');
+        
+        lines.forEach(line => {
+          const checkMatch = line.match(/^\[[xX]\](.*)/); // Acha só os marcados com X
+          if (checkMatch) {
+            const textPart = checkMatch[1].trim();
+            // Procura todos os números da frase. Pega o último número (que geralmente é o preço).
+            const numMatches = textPart.match(/\d+(?:[.,]\d+)?/g);
+            let price = 0;
+            if (numMatches && numMatches.length > 0) {
+              const lastNumStr = numMatches[numMatches.length - 1];
+              price = parseFloat(lastNumStr.replace(',', '.')); // Ex: 170,50 vira 170.50
+            }
+            if (price > 0) {
+              total += price;
+              desc.push(`✅ ${textPart}`);
+            }
+          }
+        });
+
+        if (desc.length === 0) {
+          showToast('Marque as caixinhas ([x]) que têm valor em dinheiro!'); return;
+        }
+
+        const tituloMsg = item.vehicle || item.title;
+        let msg = `*Orçamento - Serviços*\nRef: ${tituloMsg}\n\n*Serviços Autorizados:*\n${desc.join('\n')}\n\n*Total: R$ ${total.toFixed(2).replace('.', ',')}*`;
+        window.open(`https://wa.me/?text=${encodeURIComponent(msg)}`, '_blank');
+      });
+    }
+
+    const btnCode = document.createElement('button');
+    btnCode.className = 'tag-pill'; btnCode.style.border = 'none'; btnCode.innerHTML = '💻 Ver Código';
+    const btnCopy = document.createElement('button');
+    btnCopy.className = 'tag-pill'; btnCopy.style.border = 'none'; btnCopy.innerHTML = '📋 Copiar';
+
+    toolbar.appendChild(btnCode);
+    toolbar.appendChild(btnCopy);
+    contentWrap.appendChild(toolbar);
+
+    const textContainer = document.createElement('div');
+    textContainer.className = 'content-block';
+
+    // FUNÇÃO QUE DESENHA O TEXTO OU O CHECKLIST
+    const renderContent = (isCodeMode) => {
+      textContainer.innerHTML = '';
+      if (isCodeMode) {
+        textContainer.style.fontFamily = 'monospace'; textContainer.style.background = 'var(--panel-2)';
+        textContainer.style.padding = '12px'; textContainer.style.borderRadius = '8px';
+        textContainer.style.fontSize = '13.5px'; textContainer.style.overflowX = 'auto'; 
+        textContainer.style.whiteSpace = 'pre'; textContainer.textContent = item.content; 
+      } else {
+        textContainer.style = ''; textContainer.className = 'content-block';
+        
+        const lines = item.content.split('\n');
+        lines.forEach((line, index) => {
+          const checkMatch = line.match(/^\[([ xX]?)\](.*)/); // Acha [] ou [x] no início da frase
+          
+          if (checkMatch) {
+            const isChecked = checkMatch[1].toLowerCase() === 'x';
+            const textPart = checkMatch[2];
+
+            const label = document.createElement('label');
+            label.className = 'checkbox-row';
+            label.style.display = 'flex'; label.style.alignItems = 'center';
+            label.style.marginTop = '6px'; label.style.marginBottom = '6px';
+
+            const cb = document.createElement('input');
+            cb.type = 'checkbox'; cb.checked = isChecked;
+            cb.style.width = '20px'; cb.style.height = '20px'; cb.style.marginRight = '8px';
+
+            const span = document.createElement('span');
+            span.innerHTML = renderText(textPart);
+            if (isChecked) { span.style.textDecoration = 'line-through'; span.style.opacity = '0.6'; }
+
+            label.appendChild(cb); label.appendChild(span); textContainer.appendChild(label);
+
+            // A MÁGICA DE SALVAR QUANDO VOCÊ CLICA
+            cb.addEventListener('change', async () => {
+              span.style.textDecoration = cb.checked ? 'line-through' : 'none';
+              span.style.opacity = cb.checked ? '0.6' : '1';
+              
+              // Modifica o texto e salva no banco sem precisar clicar em Editar
+              const marker = cb.checked ? '[x]' : '[ ]';
+              const freshLines = item.content.split('\n');
+              freshLines[index] = freshLines[index].replace(/^\[[ xX]?\]/, marker);
+              item.content = freshLines.join('\n');
+              item.updatedAt = Date.now();
+              
+              await dbPut(item); // Salva no banco
+              
+              const ramItem = allItems.find(i => i.id === item.id);
+              if (ramItem) { ramItem.content = item.content; ramItem.updatedAt = item.updatedAt; }
+            });
+          } else {
+            const p = document.createElement('div');
+            p.style.minHeight = '1.4em'; p.innerHTML = renderText(line);
+            textContainer.appendChild(p);
+          }
+        });
+      }
+    };
+
+    renderContent(false); // Inicia desenhando os checklists
+    contentWrap.appendChild(textContainer);
+    viewBody.appendChild(contentWrap);
+
+    btnCopy.addEventListener('click', () => {
+      navigator.clipboard.writeText(item.content).then(() => showToast('Copiado!'));
     });
-    viewBody.appendChild(tw);
+
+    let isCode = false;
+    btnCode.addEventListener('click', () => {
+      isCode = !isCode;
+      btnCode.innerHTML = isCode ? '📝 Texto Normal' : '💻 Ver Código';
+      renderContent(isCode);
+    });
   }
-  const footer = document.createElement('p'); footer.className = 'view-meta-footer';
-  footer.textContent = `Criado ${timeAgo(item.createdAt)}, atualizado ${timeAgo(item.updatedAt)} e consultado ${item.useCount||0} vez(es).`;
-  viewBody.appendChild(footer);
 
   openSheet(modalView);
-
   item.useCount = (item.useCount||0) + 1;
   dbPut(item).then(() => renderCards());
 }
@@ -1216,6 +1527,20 @@ async function seedIfEmpty(){
 }
 
 /* ---------------- Eventos ---------------- */
+fieldAudio.addEventListener('change', (e) => {
+    const file = e.target.files[0];
+    if (file){ 
+      currentAudioBlob = file; 
+      updateAudioPreview(); 
+    }
+  });
+
+  btnRemoveAudio.addEventListener('click', () => {
+    currentAudioBlob = null; 
+    fieldAudio.value = ''; 
+    updateAudioPreview();
+  });
+
 function setupEventListeners(){
   searchInput.addEventListener('input', debounce(() => {
     currentSearch = searchInput.value;
